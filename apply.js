@@ -12,7 +12,7 @@ const DAILY_DEADLINE_HOUR = 23;
 const MAX_ROWS = 7;
 const GAP_MS = 3000; // 정확히 3초 간격
 const NAMES = ["김서연","이준호","박지후","최민재","정다은","한지후","서우진","오예린","류시후","문서윤","신여준","장가온","권하린","유도현","임채린","홍서준","백다온","양시윤","배이한","남예서","주하율","고주원","하선우","강시후"];
-const MIN_AGE=5, MAX_AGE=17;
+const MIN_AGE=14, MAX_AGE=19;
 
 /* ===== 상태/유틸 ===== */
 let quotaLeft = INITIAL_QUOTA;
