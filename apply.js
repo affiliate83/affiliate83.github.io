@@ -7,6 +7,7 @@ const TOTAL_SLOTS = 40;
 const INITIAL_QUOTA = 12;
 const DAILY_DEADLINE_HOUR = 23;
 const MAX_ROWS = 7;
+const GAP_MS = 3000; // ← 새 접수 간격: 정확히 3초
 const NAMES = ["김서연","이준호","박지후","최민재","정다은","한지후","서우진","오예린","류시후","문서윤","신여준","장가온","권하린","유도현","임채린","홍서준","백다온","양시윤","배이한","남예서","주하율","고주원","하선우","강시후"];
 const MIN_AGE=5, MAX_AGE=17;
 
@@ -18,6 +19,13 @@ const timeToString=d=>`${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 const pick=a=>a[Math.floor(Math.random()*a.length)];
 const randAge=()=>Math.floor(Math.random()*(MAX_AGE-MIN_AGE+1))+MIN_AGE;
 function randomRecentDate(minAgo=3,maxAgo=35){ const now=new Date(); const m=Math.floor(Math.random()*(maxAgo-minAgo+1))+minAgo; return new Date(now.getTime()-m*60*1000); }
+function maskName(name){
+  if(!name) return "";
+  const arr=[...String(name).trim()];
+  if(arr.length===1) return arr[0]+"*";
+  if(arr.length===2) return arr[0]+"*";
+  return arr[0] + "*" + arr[arr.length-1];
+}
 
 /* ===== 공통 표시 제어 ===== */
 function applyMode(){
@@ -49,16 +57,15 @@ function updateGauge(fromZero=false){
 }
 
 /* ===== 리스트 전용 ===== */
-function addRow(name,age,date){
+function addRow(displayName,age,date){
   const tbody=document.querySelector("#apply-table tbody"); if(!tbody) return;
   const tr=document.createElement("tr");
-  tr.innerHTML=`<td>${name}</td><td>${age}</td><td>${timeToString(date)}</td>`;
+  tr.innerHTML=`<td>${displayName}</td><td>${age}</td><td>${timeToString(date)}</td>`;
   tbody.insertBefore(tr, tbody.firstChild);         // 최신이 위로
-  // 최대 7행 유지
   const rows=tbody.querySelectorAll("tr");
-  for(let i=MAX_ROWS;i<rows.length;i++) rows[i].remove();
+  for(let i=MAX_ROWS;i<rows.length;i++) rows[i].remove(); // 최대 7행 유지
 }
-function seedRows(n=5){ if(MODE!=="list") return; for(let i=0;i<n;i++) addRow(pick(NAMES), randAge(), randomRecentDate()); }
+function seedRows(n=5){ if(MODE!=="list") return; for(let i=0;i<n;i++) addRow(maskName(pick(NAMES)), randAge(), randomRecentDate()); }
 
 /* ===== 토스트(바 전용) + 새 접수 이벤트 전송 ===== */
 function showToast(name,age){
@@ -68,11 +75,11 @@ function showToast(name,age){
   el.className="apply-toast";
   el.innerHTML=`<div style="display:flex;align-items:center;gap:10px;">
     <div style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex:0 0 auto;"></div>
-    <div><b>${name} (${age}세)</b> 접수 완료</div></div>
+    <div><b>${maskName(name)} (${age}세)</b> 접수 완료</div></div>
     <div style="margin-top:6px;color:#666;font-size:12px;">지금 확인하고 있어요…</div>`;
   wrap.appendChild(el);
   requestAnimationFrame(()=>{el.style.opacity="1"; el.style.transform="translateY(0)";});
-  setTimeout(()=>{el.style.opacity="0"; el.style.transform="translateY(-10px)"; setTimeout(()=> el.remove(), 250);}, 3500);
+  setTimeout(()=>{el.style.opacity="0"; el.style.transform="translateY(-10px)"; setTimeout(()=> el.remove(), 250);}, 2500);
 }
 
 /* ===== 부모(티스토리)로 메시지 보냄 ===== */
@@ -88,7 +95,8 @@ function installReceiver(){
   window.addEventListener("message", (e)=>{
     if(!e.data || e.data.type!=="applyNew") return;
     const p=e.data.payload||{};
-    addRow(p.name || "이름", p.age || randAge(), p.time ? new Date(p.time) : new Date());
+    const disp = maskName(p.name || "");
+    addRow(disp, p.age || randAge(), p.time ? new Date(p.time) : new Date());
   }, false);
 }
 
@@ -97,8 +105,8 @@ function start(){
   applyMode();
 
   if (MODE==="list"){
-    seedRows(5);             // 초기 더미 5건
-    installReceiver();       // 이후부터는 bar에서 오는 것만 추가
+    seedRows(5);             // 초기 더미 5건(마스킹)
+    installReceiver();       // 이후부터 bar에서 오는 항목만 추가
   } else {
     // bar / full: 카운트다운/게이지
     const q=document.getElementById("apply-quota"); if(q) q.textContent=quotaLeft;
@@ -106,15 +114,14 @@ function start(){
     updateGauge(true);
   }
 
-  // 새 접수 루프 (bar에서만 토스트/신규 발생)
+  // 새 접수 루프: 정확히 3초 간격
   (function loop(){
-    const gap=Math.floor(Math.random()*5000)+2000; // 2~7초
     setTimeout(()=>{
       const name=pick(NAMES), age=randAge(), now=new Date();
 
       if (MODE!=="list"){          // bar 또는 full
-        showToast(name,age);       // 토스트
-        sendNewEntry(name,age, now); // 리스트로 전달
+        showToast(name,age);       // 토스트(마스킹 표시)
+        sendNewEntry(name,age, now); // 리스트로 전달(리스트에서 다시 동일 규칙으로 마스킹)
       }
       if (Math.random()<0.6){      // 연출: 잔여 감소/게이지 갱신
         quotaLeft=Math.max(0,quotaLeft-1);
@@ -123,7 +130,7 @@ function start(){
         updateGauge();
       }
       loop();
-    }, gap);
+    }, GAP_MS);
   })();
 }
 document.addEventListener("DOMContentLoaded", start);
