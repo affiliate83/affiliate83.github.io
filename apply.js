@@ -1,4 +1,4 @@
-/* ===== 모드: bar | list | full (오타/공백/약어 허용) ===== */
+/* ===== 모드 결정: bar | list | full (오타/공백/약어 허용) ===== */
 const QS  = new URLSearchParams(location.search);
 const raw = (QS.get("mode") || "full").toLowerCase().replace(/\s/g, "");
 let MODE  = ["bar","top","b"].includes(raw) ? "bar" : (["list","bottom","l"].includes(raw) ? "list" : "full");
@@ -9,12 +9,8 @@ const INITIAL_QUOTA = 12;
 const DAILY_DEADLINE_HOUR = 23;
 const MAX_ROWS = 7;
 const GAP_MS = 3000; // 3초 간격
-
-// 나이 범위(파라미터 허용)
-const AGE_MIN = Math.max(1, parseInt(QS.get("age_min") ?? "14", 10));
-const AGE_MAX = Math.max(AGE_MIN, parseInt(QS.get("age_max") ?? "19", 10));
-
-// 잔여 하한 (파라미터 허용, 기본 2)
+const AGE_MIN = Math.max(1, parseInt(QS.get("age_min") ?? "5", 10));
+const AGE_MAX = Math.max(AGE_MIN, parseInt(QS.get("age_max") ?? "17", 10));
 const QUOTA_FLOOR = Math.max(0, parseInt(QS.get("quota_floor") ?? "2", 10));
 
 /* ===== 데이터 ===== */
@@ -26,14 +22,12 @@ let appliedCount = Math.max(0, TOTAL_SLOTS - quotaLeft);
 const pad2=n=>String(n).padStart(2,"0");
 const timeToString=d=>`${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 const pick=a=>a[Math.floor(Math.random()*a.length)];
-function randAge(){ return Math.floor(Math.random()*(AGE_MAX-AGE_MIN+1))+AGE_MIN; }
+const randAge=()=>Math.floor(Math.random()*(AGE_MAX-AGE_MIN+1))+AGE_MIN;
 function randomRecentDate(minAgo=3,maxAgo=35){ const now=new Date(); const m=Math.floor(Math.random()*(maxAgo-minAgo+1))+minAgo; return new Date(now.getTime()-m*60*1000); }
 function maskName(name){ if(!name) return ""; const arr=[...String(name).trim()]; if(arr.length<=2) return arr[0]+"*"; return arr[0]+"*"+arr[arr.length-1]; }
-
-/* ===== 요소 ===== */
 const $ = s => document.querySelector(s);
 
-/* ===== 모드 표시 ===== */
+/* ===== 표시 제어 ===== */
 function applyMode(){
   const bar=$("#apply-fixedbar"), toast=$("#apply-toastwrap"), list=$("#apply-list");
   if (!bar || !toast || !list) return;
@@ -58,17 +52,26 @@ function updateGauge(fromZero=false){
   bar.style.backgroundColor = p<60?"#22c55e":(p<85?"#f59e0b":"#ef4444");
 }
 
-/* ===== 리스트 ===== */
-function addRow(displayName,age,date){
-  const tbody=$("#apply-table tbody"); if(!tbody) return;
-  const tr=document.createElement("tr");
-  tr.innerHTML=`<td>${displayName}</td><td>${age}</td><td>${timeToString(date)}</td>`;
-  tbody.insertBefore(tr, tbody.firstChild);
-  // 최대 7행 유지
-  const rows=tbody.querySelectorAll("tr");
-  for(let i=MAX_ROWS;i<rows.length;i++) rows[i].remove();
+/* ===== 리스트: 안정 렌더링 ===== */
+let rowsData = [];              // {nameMasked, age, date}
+let lastMsgAt = 0;              // 마지막으로 부모로부터 새 항목을 받은 시각(ms)
+
+function renderRows(){
+  const tbody = $("#apply-table tbody"); if(!tbody) return;
+  tbody.innerHTML = rowsData
+    .slice(0, MAX_ROWS)
+    .map(r => `<tr><td>${r.nameMasked}</td><td>${r.age}</td><td>${timeToString(r.date)}</td></tr>`)
+    .join("");
 }
-function seedRows(n=5){ for(let i=0;i<n;i++) addRow(maskName(pick(NAMES)), randAge(), randomRecentDate()); }
+function addRowData(nameMasked, age, date){
+  rowsData.unshift({ nameMasked, age, date });
+  if (rowsData.length > MAX_ROWS) rowsData.length = MAX_ROWS;
+  renderRows();
+}
+function seedRows(n=5){
+  rowsData = [];
+  for(let i=0;i<n;i++) addRowData(maskName(pick(NAMES)), randAge(), randomRecentDate());
+}
 
 /* ===== 토스트 + 이벤트 ===== */
 function showToast(name,age){
@@ -89,7 +92,8 @@ function installReceiver(){
   window.addEventListener("message", (e)=>{
     if(!e.data || e.data.type!=="applyNew") return;
     const p=e.data.payload||{};
-    addRow(maskName(p.name||""), p.age||randAge(), p.time?new Date(p.time):new Date());
+    lastMsgAt = Date.now();
+    addRowData(maskName(p.name||""), p.age || randAge(), p.time ? new Date(p.time) : new Date());
   }, false);
 }
 
@@ -97,8 +101,17 @@ function installReceiver(){
 function start(){
   applyMode();
 
-  // 리스트가 보이는 모드(list/full)면 기본 5행 시드 + 수신
-  if (MODE!=="bar"){ seedRows(5); installReceiver(); }
+  // 리스트가 보이는 모드(list/full) → 기본 시드 + 수신 + (유실 대비) 자동보정
+  if (MODE!=="bar"){
+    seedRows(5);
+    installReceiver();
+    setInterval(()=>{
+      // 부모 릴레이가 6초 넘게 오지 않으면 보정 추가
+      if (Date.now() - lastMsgAt > 6500){
+        addRowData(maskName(pick(NAMES)), randAge(), new Date());
+      }
+    }, GAP_MS);
+  }
 
   if (MODE!=="list"){
     const q=$("#apply-quota"); if(q) q.textContent=quotaLeft;
@@ -109,7 +122,6 @@ function start(){
   (function loop(){
     setTimeout(()=>{
       const name=pick(NAMES), age=randAge(), now=new Date();
-
       if (MODE!=="list"){ showToast(name,age); sendNewEntry(name,age,now); }
 
       // 잔여 감소(하한 보호)
