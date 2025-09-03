@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>실시간 접수 연출</title>
+<style>
+  :root { --bar-h: 54px; }
+  html,body { margin:0; padding:0; font-family: -apple-system, BlinkMacSystemFont, "Noto Sans KR", system-ui, sans-serif; color:#111; }
+  /* 상단 고정바 */
+  #apply-fixedbar {
+    position: fixed; inset: 0 0 auto 0; height: var(--bar-h);
+    background:#0f2342; color:#fff; z-index: 99999;
+    box-shadow:0 8px 20px rgba(0,0,0,.25);
+  }
+  #apply-fixedbar .wrap { max-width:1100px; margin:0 auto; padding:10px 14px 10px; }
+  #apply-fixedbar .row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  #apply-gaugeTrack { margin-top:8px; height:8px; border-radius:6px; background:#2a3b5b; overflow:hidden; }
+  #apply-gaugeBar { width:0%; height:100%; border-radius:6px; background:#22c55e; transition:width .7s ease, background-color .3s ease; }
+
+  /* 본문 */
+  main { max-width:900px; margin: calc(var(--bar-h) + 16px) auto 24px; padding:0 12px; }
+  h2 { margin:28px 0 12px; font-size:22px; }
+  .note { margin-top:8px; color:#666; font-size:13px; }
+
+  /* 토스트 */
+  #apply-toastwrap {
+    position: fixed; right:12px; top: calc(var(--bar-h) + 12px); z-index: 100000;
+    display:flex; flex-direction:column; gap:8px; pointer-events:none;
+  }
+  .apply-toast {
+    background:#fff; border:1px solid #eaeaea; border-radius:12px;
+    box-shadow:0 12px 28px rgba(0,0,0,.12);
+    padding:12px 14px; max-width:80vw; min-width:220px;
+    font-size:14px; color:#111; transform:translateY(-10px); opacity:0; transition:.25s ease;
+    pointer-events:auto;
+  }
+
+  /* 표 */
+  #apply-tablewrap { overflow:auto; border:1px solid #eee; border-radius:12px; }
+  #apply-table { width:100%; border-collapse:collapse; font-size:15px; }
+  #apply-table thead tr { background:#fafafa; }
+  #apply-table th, #apply-table td { padding:12px; border-bottom:1px solid #f0f0f0; text-align:center; }
+
+  @media (max-width:480px){ :root{ --bar-h: 58px; } }
+</style>
+</head>
+<body>
+  <!-- 상단 고정바 -->
+  <div id="apply-fixedbar">
+    <div class="wrap">
+      <div class="row">
+        <div style="font-weight:700;">오늘 마감까지 <span id="apply-countdown">00:00:00</span></div>
+        <div style="opacity:.95;">· 예상 잔여 <strong id="apply-quota">12</strong>명</div>
+      </div>
+      <div id="apply-gaugeTrack"><div id="apply-gaugeBar"></div></div>
+    </div>
+  </div>
+
+  <!-- 토스트 -->
+  <div id="apply-toastwrap"></div>
+
+  <!-- 본문 -->
+  <main>
+    <h2>최근 등록 현황 <small style="font-size:12px;color:#777;">(실시간 예시)</small></h2>
+    <div id="apply-tablewrap">
+      <table id="apply-table">
+        <thead>
+          <tr><th>이름</th><th>나이</th><th>등록 시각</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="note">※ 본 화면의 접수 내역은 <b>실시간 연출 예시</b>입니다.</div>
+  </main>
+
+<script>
+/* ===== 설정값 ===== */
+const TOTAL_SLOTS = 40;        // 총 정원
+const INITIAL_QUOTA = 12;      // 초기 잔여
+const DAILY_DEADLINE_HOUR = 23;
+const NAMES = ["김서연","이준호","박지후","최민재","정다은","한지후","서우진","오예린","류시후","문서윤","신여준","장가온","권하린","유도현","임채린","홍서준","백다온","양시윤","배이한","남예서","주하율","고주원","하선우","강시후"];
+const MIN_AGE = 5, MAX_AGE = 17;
+
+/* ===== 상태 ===== */
+let quotaLeft = INITIAL_QUOTA;
+let appliedCount = Math.max(0, TOTAL_SLOTS - quotaLeft);
+
+/* ===== 유틸 ===== */
+const pad2 = n => String(n).padStart(2,"0");
+const timeToString = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+const randAge = () => Math.floor(Math.random()*(MAX_AGE-MIN_AGE+1))+MIN_AGE;
+function randomRecentDate(minAgo=0, maxAgo=30){
+  const now = new Date();
+  const agoMin = Math.floor(Math.random()*(maxAgo-minAgo+1))+minAgo;
+  return new Date(now.getTime() - agoMin*60*1000);
+}
+
+/* ===== 카운트다운 ===== */
+function tickCountdown(){
+  const now = new Date();
+  const deadline = new Date();
+  deadline.setHours(DAILY_DEADLINE_HOUR,59,59,999);
+  if (deadline < now) deadline.setDate(deadline.getDate()+1);
+  const diff = deadline - now;
+  const hh = pad2(Math.floor(diff/3600000));
+  const mm = pad2(Math.floor((diff%3600000)/60000));
+  const ss = pad2(Math.floor((diff%60000)/1000));
+  document.getElementById("apply-countdown").textContent = `${hh}:${mm}:${ss}`;
+}
+
+/* ===== 게이지 ===== */
+function updateGauge(fromZero=false){
+  const bar = document.getElementById("apply-gaugeBar");
+  const percent = Math.max(0, Math.min(100, appliedCount / TOTAL_SLOTS * 100));
+  if (fromZero){
+    bar.style.transition="none"; bar.style.width="0%";
+    requestAnimationFrame(()=>{ bar.style.transition="width .7s ease, background-color .3s ease";
+      requestAnimationFrame(()=> bar.style.width = percent + "%"); });
+  } else {
+    bar.style.width = percent + "%";
+  }
+  bar.style.backgroundColor = percent < 60 ? "#22c55e" : (percent < 85 ? "#f59e0b" : "#ef4444");
+}
+
+/* ===== 표 ===== */
+function addRow(name, age, date){
+  const tbody = document.querySelector("#apply-table tbody");
+  const tr = document.crea
