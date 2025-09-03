@@ -9,8 +9,8 @@ const INITIAL_QUOTA = 12;
 const DAILY_DEADLINE_HOUR = 23;
 const MAX_ROWS = 7;
 const GAP_MS = 3000; // 3초 간격
-const AGE_MIN = Math.max(1, parseInt(QS.get("age_min") ?? "5", 10));
-const AGE_MAX = Math.max(AGE_MIN, parseInt(QS.get("age_max") ?? "17", 10));
+const AGE_MIN = Math.max(1, parseInt(QS.get("age_min") ?? "14", 10));
+const AGE_MAX = Math.max(AGE_MIN, parseInt(QS.get("age_max") ?? "19", 10));
 const QUOTA_FLOOR = Math.max(0, parseInt(QS.get("quota_floor") ?? "2", 10));
 
 /* ===== 데이터 ===== */
